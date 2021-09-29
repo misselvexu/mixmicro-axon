@@ -97,7 +97,7 @@ public class GapAwareTrackingToken implements TrackingToken, Serializable {
      */
     protected static SortedSet<Long> createSortedSetOf(Collection<Long> gaps, long index) {
         if (gaps == null || gaps.isEmpty()) {
-            return Collections.emptySortedSet();
+            return new ConcurrentSkipListSet<>();
         }
         SortedSet<Long> gapSet = new ConcurrentSkipListSet<>(gaps);
         Assert.isTrue(gapSet.last() < index,
