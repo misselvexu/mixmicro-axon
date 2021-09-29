@@ -37,6 +37,7 @@ public class EqualFieldsMatcher<T> extends BaseMatcher<T> {
     private Field failedField;
     private Object failedFieldExpectedValue;
     private Object failedFieldActualValue;
+    private boolean isPrimitive;
 
     /**
      * Initializes an EqualFieldsMatcher that will match an object with equal properties as the given
@@ -67,8 +68,30 @@ public class EqualFieldsMatcher<T> extends BaseMatcher<T> {
     }
 
     private boolean matchesSafely(Object actual) {
-        return expected.getClass().equals(actual.getClass())
-                && fieldsMatch(expected.getClass(), expected, actual);
+        if (expected.getClass().equals(actual.getClass())) {
+            if (isPrimitiveOrBoxed(actual)) {
+                isPrimitive = true;
+                return actual.equals(expected);
+            } else {
+                isPrimitive = false;
+                return fieldsMatch(expected.getClass(), expected, actual);
+            }
+        } else {
+            return false;
+        }
+    }
+
+    private boolean isPrimitiveOrBoxed(Object actual) {
+        return actual.getClass().isPrimitive()
+                || actual.getClass().equals(Boolean.class)
+                || actual.getClass().equals(Byte.class)
+                || actual.getClass().equals(Character.class)
+                || actual.getClass().equals(Short.class)
+                || actual.getClass().equals(Integer.class)
+                || actual.getClass().equals(Long.class)
+                || actual.getClass().equals(Double.class)
+                || actual.getClass().equals(Float.class)
+                || actual.getClass().equals(String.class);
     }
 
     private boolean fieldsMatch(Class<?> aClass, Object expectedValue, Object actual) {
@@ -124,6 +147,10 @@ public class EqualFieldsMatcher<T> extends BaseMatcher<T> {
      */
     public Object getFailedFieldActualValue() {
         return failedFieldActualValue;
+    }
+
+    public boolean isPrimitive() {
+        return isPrimitive;
     }
 
     @Override

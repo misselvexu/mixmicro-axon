@@ -132,13 +132,21 @@ public class CommandValidator {
             }
             EqualFieldsMatcher<Object> matcher = new EqualFieldsMatcher<>(expected, fieldFilter);
             if (!matcher.matches(actual)) {
-                throw new AxonAssertionError(format("Unexpected command at index %s (0-based). "
-                                                            + "Field value of '%s.%s', expected <%s>, but got <%s>",
-                                                    commandIndex,
-                                                    expected.getClass().getSimpleName(),
-                                                    matcher.getFailedField().getName(),
-                                                    matcher.getFailedFieldExpectedValue(),
-                                                    matcher.getFailedFieldActualValue()));
+                if (matcher.isPrimitive()) {
+                    throw new AxonAssertionError(format("Unexpected command of primitive type at index %s (0-based). "
+                                                                + "Expected primitive <%s>, but got <%s>",
+                                                        commandIndex,
+                                                        matcher.getFailedFieldExpectedValue(),
+                                                        matcher.getFailedFieldActualValue()));
+                } else {
+                    throw new AxonAssertionError(format("Unexpected command at index %s (0-based). "
+                                                                + "Field value of '%s.%s', expected <%s>, but got <%s>",
+                                                        commandIndex,
+                                                        expected.getClass().getSimpleName(),
+                                                        matcher.getFailedField().getName(),
+                                                        matcher.getFailedFieldExpectedValue(),
+                                                        matcher.getFailedFieldActualValue()));
+                }
             }
         }
     }
