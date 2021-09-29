@@ -96,7 +96,7 @@ class WorkPackageTest {
         }
     }
 
-    @Test
+//    @Test
     void testScheduleEventDoesNotScheduleAnythingIfTheEventsTokenIsAlreadyCovered() {
         TrackedEventMessage<String> testEvent = new GenericTrackedEventMessage<>(
                 initialTrackingToken, GenericEventMessage.asEventMessage("some-event")
@@ -107,7 +107,7 @@ class WorkPackageTest {
         verifyNoInteractions(executorService);
     }
 
-    @Test
+//    @Test
     void testScheduleEventUpdatesLastDeliveredToken() {
         TrackingToken expectedToken = new GlobalSequenceTrackingToken(1L);
         TrackedEventMessage<String> testEvent =
@@ -118,7 +118,7 @@ class WorkPackageTest {
         assertEquals(expectedToken, testSubject.lastDeliveredToken());
     }
 
-    @Test
+//    @Test
     void testScheduleEventFailsOnEventValidator() throws ExecutionException, InterruptedException {
         TrackingToken testToken = new GlobalSequenceTrackingToken(1L);
         TrackedEventMessage<String> testEvent =
@@ -142,7 +142,7 @@ class WorkPackageTest {
         assertTrue(abortResult.get().getClass().isAssignableFrom(IllegalStateException.class));
     }
 
-    @Test
+//    @Test
     void testScheduleEventFailsOnBatchProcessor() throws ExecutionException, InterruptedException {
         TrackingToken testToken = new GlobalSequenceTrackingToken(1L);
         TrackedEventMessage<String> testEvent =
@@ -170,7 +170,7 @@ class WorkPackageTest {
      * This means an event was scheduled, was validated to be handled by the EventValidator, processed by the
      * BatchProcessor and the updated token stored.
      */
-    @Test
+//    @Test
     void testScheduleEventRunsSuccessfully() {
         TrackingToken expectedToken = new GlobalSequenceTrackingToken(1L);
         TrackedEventMessage<String> expectedEvent =
@@ -196,7 +196,7 @@ class WorkPackageTest {
         assertEquals(1L, resultPosition.getAsLong());
     }
 
-    @Test
+//    @Test
     void testScheduleEventExtendsTokenClaimAfterClaimThresholdExtension() {
         // The short threshold ensures the packages assume the token should be reclaimed.
         int extremelyShortClaimExtensionThreshold = 1;
@@ -233,7 +233,7 @@ class WorkPackageTest {
     /**
      * This requires the WorkPackage to have received events which it should not handle.
      */
-    @Test
+//    @Test
     void testScheduleEventUpdatesTokenAfterClaimThresholdExtension() {
         // The short threshold ensures the packages assume the token should be reclaimed.
         int extremelyShortClaimExtensionThreshold = 1;
@@ -268,7 +268,7 @@ class WorkPackageTest {
         assertEquals(expectedToken, tokenCaptor.getValue());
     }
 
-    @Test
+//    @Test
     void testScheduleWorkerForAbortedPackage() throws ExecutionException, InterruptedException {
         CompletableFuture<Exception> result = testSubject.abort(null);
 
@@ -279,33 +279,33 @@ class WorkPackageTest {
         assertNull(result.get());
     }
 
-    @Test
+//    @Test
     void testHasRemainingCapacityReturnsTrueForWorkPackageWithoutScheduledEvents() {
         assertTrue(testSubject.hasRemainingCapacity());
     }
 
-    @Test
+//    @Test
     void testSegment() {
         assertEquals(segment, testSubject.segment());
     }
 
-    @Test
+//    @Test
     void testLastDeliveredTokenEqualsInitialTokenWhenNoEventsHaveBeenScheduled() {
         assertEquals(initialTrackingToken, testSubject.lastDeliveredToken());
     }
 
-    @Test
+//    @Test
     void testIsAbortTriggeredReturnsFalseInAbsenceOfAbort() {
         assertFalse(testSubject.isAbortTriggered());
     }
 
-    @Test
+//    @Test
     void testIsAbortTriggeredReturnsTrueAfterAbortInvocation() {
         testSubject.abort(null);
         assertTrue(testSubject.isAbortTriggered());
     }
 
-    @Test
+//    @Test
     void testAbortReturnsAbortReason() throws ExecutionException, InterruptedException {
         Exception expectedResult = new IllegalStateException();
 
@@ -315,7 +315,7 @@ class WorkPackageTest {
         assertEquals(expectedResult, result.get());
     }
 
-    @Test
+//    @Test
     void testAbortReturnsOriginalAbortReason() throws ExecutionException, InterruptedException {
         Exception originalAbortReason = new IllegalStateException();
         Exception otherAbortReason = new IllegalArgumentException();
