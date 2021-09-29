@@ -19,6 +19,7 @@ package org.axonframework.serialization;
 import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.converters.MarshallingContext;
 import com.thoughtworks.xstream.converters.UnmarshallingContext;
+import com.thoughtworks.xstream.converters.collections.CollectionConverter;
 import com.thoughtworks.xstream.converters.collections.MapConverter;
 import com.thoughtworks.xstream.io.HierarchicalStreamReader;
 import com.thoughtworks.xstream.io.HierarchicalStreamWriter;
@@ -36,6 +37,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentSkipListSet;
 
 import static org.axonframework.common.BuilderUtils.assertNonNull;
 
@@ -79,7 +81,10 @@ public abstract class AbstractXStreamSerializer implements Serializer {
         xStream.alias("uuid", UUID.class);
 
         xStream.alias("meta-data", MetaData.class);
+
         xStream.registerConverter(new MetaDataConverter(xStream.getMapper()));
+        xStream.registerConverter(new ConcurrentSkipListSetConverter(xStream.getMapper()));
+//        xStream.
     }
 
     /**
@@ -404,6 +409,19 @@ public abstract class AbstractXStreamSerializer implements Serializer {
             } else {
                 return MetaData.from(contents);
             }
+        }
+    }
+
+    private static final class ConcurrentSkipListSetConverter extends CollectionConverter {
+
+        public ConcurrentSkipListSetConverter(Mapper mapper) {
+            super(mapper);
+        }
+
+        @Override
+        public boolean canConvert(Class type) {
+            return super.canConvert(type)
+                    || type.equals(ConcurrentSkipListSet.class);
         }
     }
 }
