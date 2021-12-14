@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2021. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,10 +23,11 @@ import org.axonframework.common.transaction.TransactionManager;
 import org.axonframework.eventhandling.EventBus;
 import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.GenericEventMessage;
+import org.axonframework.eventhandling.scheduling.EventScheduler;
 import org.axonframework.eventhandling.scheduling.ScheduleToken;
 import org.axonframework.eventhandling.scheduling.SchedulingException;
+import org.axonframework.lifecycle.LifecycleAware;
 import org.axonframework.lifecycle.Phase;
-import org.axonframework.lifecycle.ShutdownHandler;
 import org.axonframework.messaging.MetaData;
 import org.axonframework.serialization.SerializedObject;
 import org.axonframework.serialization.Serializer;
@@ -50,8 +51,15 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import static org.axonframework.common.BuilderUtils.assertNonNull;
-import static org.axonframework.eventhandling.scheduling.quartz.FireEventJob.*;
-import static org.axonframework.messaging.Headers.*;
+import static org.axonframework.eventhandling.scheduling.quartz.FireEventJob.EVENT_BUS_KEY;
+import static org.axonframework.eventhandling.scheduling.quartz.FireEventJob.EVENT_JOB_DATA_BINDER_KEY;
+import static org.axonframework.eventhandling.scheduling.quartz.FireEventJob.TRANSACTION_MANAGER_KEY;
+import static org.axonframework.messaging.Headers.MESSAGE_ID;
+import static org.axonframework.messaging.Headers.MESSAGE_METADATA;
+import static org.axonframework.messaging.Headers.MESSAGE_REVISION;
+import static org.axonframework.messaging.Headers.MESSAGE_TIMESTAMP;
+import static org.axonframework.messaging.Headers.MESSAGE_TYPE;
+import static org.axonframework.messaging.Headers.SERIALIZED_MESSAGE_PAYLOAD;
 import static org.quartz.JobKey.jobKey;
 
 /**
@@ -62,7 +70,7 @@ import static org.quartz.JobKey.jobKey;
  * @see FireEventJob
  * @since 0.7
  */
-public class QuartzEventScheduler implements org.axonframework.eventhandling.scheduling.EventScheduler {
+public class QuartzEventScheduler implements EventScheduler, LifecycleAware {
 
     private static final Logger logger = LoggerFactory.getLogger(QuartzEventScheduler.class);
 
@@ -111,9 +119,11 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
     /**
      * Instantiate a Builder to be able to create a {@link QuartzEventScheduler}.
      * <p>
-     * The {@link EventJobDataBinder} is defaulted to an {@link DirectEventJobDataBinder}, and the
-     * {@link TransactionManager} defaults to a {@link NoTransactionManager}.
-     * The {@link Scheduler} and {@link EventBus} are a <b>hard requirements</b> and as such should be provided.
+     * The {@link EventJobDataBinder} is defaulted to a {@link DirectEventJobDataBinder} using the configured {@link
+     * Serializer}, and the {@link TransactionManager} defaults to a {@link NoTransactionManager}. Note that if the
+     * {@code Serializer} is not set, the configuration expects the {@code EventJobDataBinder} to be set.
+     * <p>
+     * The {@link Scheduler} and {@link EventBus} are <b>hard requirements</b> and as such should be provided.
      *
      * @return a Builder to be able to create a {@link QuartzEventScheduler}
      */
@@ -204,13 +214,12 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
         this.groupIdentifier = groupIdentifier;
     }
 
-    /**
-     * {@inheritDoc}
-     * <p>
-     * Will shutdown in the {@link Phase#INBOUND_EVENT_CONNECTORS} phase.
-     */
     @Override
-    @ShutdownHandler(phase = Phase.INBOUND_EVENT_CONNECTORS)
+    public void registerLifecycleHandlers(LifecycleRegistry lifecycle) {
+        lifecycle.onShutdown(Phase.INBOUND_EVENT_CONNECTORS, this::shutdown);
+    }
+
+    @Override
     public void shutdown() {
         try {
             scheduler.shutdown(true);
@@ -242,9 +251,20 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
         /**
          * Instantiate a {@link DirectEventJobDataBinder} which defaults to a {@link XStreamSerializer} for
          * de-/serializing event messages.
+         *
+         * @deprecated in favor of {@link DirectEventJobDataBinder#DirectEventJobDataBinder(Serializer)}, as the {@link
+         * Serializer} is a hard requirement.
          */
+        @Deprecated
         public DirectEventJobDataBinder() {
             this(XStreamSerializer.defaultSerializer());
+            logger.warn(
+                    "The default XStreamSerializer is used, whereas it is strongly recommended to configure"
+                            + " the security context of the XStream instance.",
+                    new AxonConfigurationException(
+                            "A default XStreamSerializer is used, without specifying the security context"
+                    )
+            );
         }
 
         /**
@@ -340,16 +360,19 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
     /**
      * Builder class to instantiate a {@link QuartzEventScheduler}.
      * <p>
-     * The {@link EventJobDataBinder} is defaulted to an {@link DirectEventJobDataBinder}, and the
-     * {@link TransactionManager} defaults to a {@link NoTransactionManager}.
-     * The {@link Scheduler} and {@link EventBus} are a <b>hard requirements</b> and as such should be provided.
+     * The {@link EventJobDataBinder} is defaulted to a {@link DirectEventJobDataBinder} using the configured {@link
+     * Serializer}, and the {@link TransactionManager} defaults to a {@link NoTransactionManager}. Note that if the
+     * {@code Serializer} is not set, the configuration expects the {@code EventJobDataBinder} to be set.
+     * <p>
+     * The {@link Scheduler} and {@link EventBus} are <b>hard requirements</b> and as such should be provided.
      */
     public static class Builder {
 
         private Scheduler scheduler;
         private EventBus eventBus;
-        private Supplier<EventJobDataBinder> jobDataBinderSupplier = DirectEventJobDataBinder::new;
+        private Supplier<EventJobDataBinder> jobDataBinderSupplier;
         private TransactionManager transactionManager = NoTransactionManager.INSTANCE;
+        private Supplier<Serializer> serializer;
 
         /**
          * Sets the {@link Scheduler} used for scheduling and triggering purposes of the deadlines.
@@ -404,6 +427,19 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
         }
 
         /**
+         * Sets the {@link Serializer} used by the {@link EventJobDataBinder}. The {@code EventJobDataBinder} uses the
+         * {@code Serializer} to de-/serialize the scheduled event.
+         *
+         * @param serializer a {@link Serializer} used by the {@link EventJobDataBinder} when serializing events
+         * @return the current Builder instance, for fluent interfacing
+         */
+        public Builder serializer(Serializer serializer) {
+            assertNonNull(serializer, "Serializer may not be null");
+            this.serializer = () -> serializer;
+            return this;
+        }
+
+        /**
          * Initializes a {@link QuartzEventScheduler} as specified through this Builder.
          *
          * @return a {@link QuartzEventScheduler} as specified through this Builder
@@ -421,6 +457,19 @@ public class QuartzEventScheduler implements org.axonframework.eventhandling.sch
         protected void validate() throws AxonConfigurationException {
             assertNonNull(scheduler, "The Scheduler is a hard requirement and should be provided");
             assertNonNull(eventBus, "The EventBus is a hard requirement and should be provided");
+            if (jobDataBinderSupplier == null) {
+                if (serializer == null) {
+                    logger.warn(
+                            "The default XStreamSerializer is used, whereas it is strongly recommended to configure"
+                                    + " the security context of the XStream instance.",
+                            new AxonConfigurationException(
+                                    "A default XStreamSerializer is used, without specifying the security context"
+                            )
+                    );
+                    serializer = XStreamSerializer::defaultSerializer;
+                }
+                jobDataBinderSupplier = () -> new DirectEventJobDataBinder(serializer.get());
+            }
         }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2021. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import org.axonframework.commandhandling.SimpleCommandBus;
 import org.axonframework.commandhandling.gateway.CommandGateway;
 import org.axonframework.commandhandling.gateway.DefaultCommandGateway;
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.BuilderUtils;
 import org.axonframework.common.IdentifierFactory;
 import org.axonframework.common.jdbc.PersistenceExceptionResolver;
 import org.axonframework.common.jpa.EntityManagerProvider;
@@ -46,6 +47,7 @@ import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.jpa.JpaEventStorageEngine;
 import org.axonframework.lifecycle.LifecycleHandlerInvocationException;
 import org.axonframework.messaging.Message;
+import org.axonframework.messaging.ScopeAwareProvider;
 import org.axonframework.messaging.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.annotation.HandlerDefinition;
@@ -99,6 +101,8 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static java.util.stream.Collectors.toList;
+import static org.axonframework.common.BuilderUtils.assertNonNull;
+import static org.axonframework.common.BuilderUtils.assertStrictPositive;
 
 /**
  * Entry point of the Axon Configuration API. It implements the Configurer interface, providing access to the methods to
@@ -121,8 +125,6 @@ import static java.util.stream.Collectors.toList;
 public class DefaultConfigurer implements Configurer {
 
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
-
-    private static final int LIFECYCLE_PHASE_TIMEOUT_SECONDS = 5;
 
     private final Configuration config = new ConfigurationImpl();
 
@@ -153,6 +155,8 @@ public class DefaultConfigurer implements Configurer {
     private final TreeMap<Integer, List<LifecycleHandler>> startHandlers = new TreeMap<>();
     private final TreeMap<Integer, List<LifecycleHandler>> shutdownHandlers = new TreeMap<>(Comparator.reverseOrder());
     private final List<ModuleConfiguration> modules = new ArrayList<>();
+    private long lifecyclePhaseTimeout = 5;
+    private TimeUnit lifecyclePhaseTimeunit = TimeUnit.SECONDS;
 
     private boolean initialized = false;
     private Integer currentLifecyclePhase = null;
@@ -267,6 +271,8 @@ public class DefaultConfigurer implements Configurer {
         components.put(QueryGateway.class, new Component<>(config, "queryGateway", this::defaultQueryGateway));
         components.put(ResourceInjector.class,
                        new Component<>(config, "resourceInjector", this::defaultResourceInjector));
+        components.put(ScopeAwareProvider.class,
+                       new Component<>(config, "scopeAwareProvider", this::defaultScopeAwareProvider));
         components.put(DeadlineManager.class, new Component<>(config, "deadlineManager", this::defaultDeadlineManager));
         components.put(EventUpcaster.class, upcasterChain);
         components.put(EventGateway.class, new Component<>(config, "eventGateway", this::defaultEventGateway));
@@ -387,6 +393,19 @@ public class DefaultConfigurer implements Configurer {
     }
 
     /**
+     * Returns a {@link ScopeAwareProvider} that provides {@link org.axonframework.messaging.ScopeAware} instances to be
+     * used by a {@link DeadlineManager}. Uses the given {@code config} to construct the default {@link
+     * ConfigurationScopeAwareProvider}.
+     *
+     * @param config the configuration used to construct the default {@link ConfigurationScopeAwareProvider}
+     * @return a {@link ScopeAwareProvider} that provides {@link org.axonframework.messaging.ScopeAware} instances to be
+     * used by a {@link DeadlineManager}
+     */
+    protected ScopeAwareProvider defaultScopeAwareProvider(Configuration config) {
+        return new ConfigurationScopeAwareProvider(config);
+    }
+
+    /**
      * Provides the default {@link DeadlineManager} implementation. Subclasses may override this method to provide their
      * own default.
      *
@@ -394,7 +413,7 @@ public class DefaultConfigurer implements Configurer {
      * @return The default DeadlineManager to use
      */
     protected DeadlineManager defaultDeadlineManager(Configuration config) {
-        return SimpleDeadlineManager.builder().scopeAwareProvider(new ConfigurationScopeAwareProvider(config)).build();
+        return SimpleDeadlineManager.builder().scopeAwareProvider(defaultScopeAwareProvider(config)).build();
     }
 
     /**
@@ -630,6 +649,15 @@ public class DefaultConfigurer implements Configurer {
     }
 
     @Override
+    public Configurer configureLifecyclePhaseTimeout(long timeout, TimeUnit timeUnit) {
+        assertStrictPositive(timeout, "The lifecycle phase timeout should be strictly positive");
+        assertNonNull(timeUnit, "The lifecycle phase time unit should not be null");
+        this.lifecyclePhaseTimeout = timeout;
+        this.lifecyclePhaseTimeunit = timeUnit;
+        return this;
+    }
+
+    @Override
     public Configuration buildConfiguration() {
         if (!initialized) {
             verifyIdentifierFactory();
@@ -688,14 +716,14 @@ public class DefaultConfigurer implements Configurer {
                 startHandlers,
                 e -> {
                     logger.debug("Start up is being ended prematurely due to an exception");
-                    invokeShutdownHandlers();
-                    throw new LifecycleHandlerInvocationException(
-                            String.format(
-                                    "One of the start handlers in phase [%d] failed with the following exception:",
-                                    currentLifecyclePhase
-                            ),
-                            e
+                    String startFailure = String.format(
+                            "One of the start handlers in phase [%d] failed with the following exception: ",
+                            currentLifecyclePhase
                     );
+                    logger.warn(startFailure, e);
+
+                    invokeShutdownHandlers();
+                    throw new LifecycleHandlerInvocationException(startFailure, e);
                 }
         );
 
@@ -739,7 +767,7 @@ public class DefaultConfigurer implements Configurer {
                         .map(LifecycleHandler::run)
                         .reduce((cf1, cf2) -> CompletableFuture.allOf(cf1, cf2))
                         .orElse(CompletableFuture.completedFuture(null))
-                        .get(LIFECYCLE_PHASE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                        .get(lifecyclePhaseTimeout, lifecyclePhaseTimeunit);
             } catch (CompletionException | ExecutionException e) {
                 exceptionHandler.accept(e);
             } catch (InterruptedException e) {

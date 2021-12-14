@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2020. Axon Framework
+ * Copyright (c) 2010-2021. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,14 +31,16 @@ import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.scheduling.EventScheduler;
 import org.axonframework.eventhandling.scheduling.ScheduleToken;
 import org.axonframework.eventhandling.scheduling.java.SimpleScheduleToken;
+import org.axonframework.lifecycle.LifecycleAware;
 import org.axonframework.lifecycle.Phase;
-import org.axonframework.lifecycle.ShutdownHandler;
-import org.axonframework.lifecycle.StartHandler;
 import org.axonframework.messaging.MetaData;
 import org.axonframework.serialization.SerializedObject;
 import org.axonframework.serialization.Serializer;
 import org.axonframework.serialization.xml.XStreamSerializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.lang.invoke.MethodHandles;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.ExecutionException;
@@ -56,7 +58,9 @@ import static org.axonframework.common.ObjectUtils.getOrDefault;
  * @author Marc Gathier
  * @since 4.4
  */
-public class AxonServerEventScheduler implements EventScheduler {
+public class AxonServerEventScheduler implements EventScheduler, LifecycleAware {
+
+    private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
     private final long requestTimeout;
     private final Serializer serializer;
@@ -68,9 +72,10 @@ public class AxonServerEventScheduler implements EventScheduler {
     /**
      * Instantiate a Builder to be able to create a {@link AxonServerEventScheduler}.
      * <p>
-     * The {@code requestTimeout} is defaulted to {@code 15000} millis and the {@link Serializer} to a {@link
-     * XStreamSerializer}. The {@link AxonServerConnectionManager} is a <b>hard requirement</b> and as such should be
-     * provided.
+     * The {@code requestTimeout} is defaulted to {@code 15000} millis.
+     * <p>
+     * The {@link Serializer} and {@link AxonServerConnectionManager} are <b>hard requirements</b> and as such
+     * should be provided.
      *
      * @return a Builder to be able to create a {@link AxonServerEventScheduler}
      */
@@ -81,23 +86,28 @@ public class AxonServerEventScheduler implements EventScheduler {
     /**
      * Instantiates an {@link AxonServerEventScheduler} using the given {@link Builder}.
      * <p>
-     * Will assert that the {@link AxonServerConnectionManager} is not {@code null} and will throw an {@link
-     * AxonConfigurationException} if this is the case.
+     * Will assert that the {@link Serializer} and {@link AxonServerConnectionManager} are not {@code null} and will
+     * throw an {@link AxonConfigurationException} if this is the case.
      *
      * @param builder the {@link Builder} used.
      */
     protected AxonServerEventScheduler(Builder builder) {
         builder.validate();
         this.requestTimeout = builder.requestTimeout;
-        this.serializer = builder.eventSerializer.get();
+        this.serializer = builder.serializer.get();
         this.axonServerConnectionManager = builder.axonServerConnectionManager;
         this.converter = new GrpcMetaDataConverter(serializer);
+    }
+
+    @Override
+    public void registerLifecycleHandlers(LifecycleRegistry lifecycle) {
+        lifecycle.onStart(Phase.OUTBOUND_EVENT_CONNECTORS, this::start);
+        lifecycle.onShutdown(Phase.OUTBOUND_EVENT_CONNECTORS, this::shutdownDispatching);
     }
 
     /**
      * Start the Axon Server {@link EventScheduler} implementation.
      */
-    @StartHandler(phase = Phase.OUTBOUND_EVENT_CONNECTORS)
     public void start() {
         started.set(true);
     }
@@ -105,7 +115,6 @@ public class AxonServerEventScheduler implements EventScheduler {
     /**
      * Shuts down the Axon Server {@link EventScheduler} implementation.
      */
-    @ShutdownHandler(phase = Phase.OUTBOUND_EVENT_CONNECTORS)
     public void shutdownDispatching() {
         started.set(false);
     }
@@ -242,14 +251,15 @@ public class AxonServerEventScheduler implements EventScheduler {
     /**
      * Builder class to instantiate an {@link AxonServerEventScheduler}.
      * <p>
-     * The {@code requestTimeout} is defaulted to {@code 15000} millis and the {@link Serializer} to a {@link
-     * XStreamSerializer}. The {@link AxonServerConnectionManager} is a <b>hard requirement</b> and as such should be
+     * The {@code requestTimeout} is defaulted to {@code 15000} millis.
+     * <p>
+     * The {@link Serializer} and {@link AxonServerConnectionManager} are <b>hard requirements</b> and as such should be
      * provided.
      */
     public static class Builder {
 
         private long requestTimeout = 15000;
-        private Supplier<Serializer> eventSerializer = XStreamSerializer::defaultSerializer;
+        private Supplier<Serializer> serializer;
         private AxonServerConnectionManager axonServerConnectionManager;
 
         /**
@@ -271,7 +281,8 @@ public class AxonServerEventScheduler implements EventScheduler {
          * @return the current Builder instance, for fluent interfacing
          */
         public Builder eventSerializer(Serializer eventSerializer) {
-            this.eventSerializer = () -> eventSerializer;
+            assertNonNull(eventSerializer, "The event Serializer may not be null");
+            this.serializer = () -> eventSerializer;
             return this;
         }
 
@@ -299,6 +310,16 @@ public class AxonServerEventScheduler implements EventScheduler {
         }
 
         protected void validate() throws AxonConfigurationException {
+            if (serializer == null) {
+                logger.warn(
+                        "The default XStreamSerializer is used, whereas it is strongly recommended to configure"
+                                + " the security context of the XStream instance.",
+                        new AxonConfigurationException(
+                                "A default XStreamSerializer is used, without specifying the security context"
+                        )
+                );
+                serializer = XStreamSerializer::defaultSerializer;
+            }
             assertNonNull(axonServerConnectionManager,
                           "The AxonServerConnectionManager is a hard requirement and should be provided");
         }

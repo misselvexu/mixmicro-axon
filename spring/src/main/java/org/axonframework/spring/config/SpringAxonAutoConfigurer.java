@@ -45,6 +45,7 @@ import org.axonframework.eventhandling.tokenstore.TokenStore;
 import org.axonframework.eventsourcing.AggregateFactory;
 import org.axonframework.eventsourcing.SnapshotTriggerDefinition;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
+import org.axonframework.messaging.ScopeAwareProvider;
 import org.axonframework.messaging.annotation.HandlerDefinition;
 import org.axonframework.messaging.annotation.MessageHandler;
 import org.axonframework.messaging.annotation.ParameterResolverFactory;
@@ -195,8 +196,9 @@ public class SpringAxonAutoConfigurer implements ImportBeanDefinitionRegistrar, 
                 () -> genericBeanDefinition(SpringResourceInjector.class).getBeanDefinition()
         );
         configurer.configureResourceInjector(c -> getBean(resourceInjector, c));
-        registerComponent(EventScheduler.class, configurer, Configuration::eventScheduler);
+        registerComponent(ScopeAwareProvider.class, configurer);
         registerComponent(DeadlineManager.class, configurer, Configuration::deadlineManager);
+        registerComponent(EventScheduler.class, configurer, Configuration::eventScheduler);
 
         EventProcessingModule eventProcessingModule = new EventProcessingModule();
         Optional<String> eventProcessingConfigurerOptional = findComponent(EventProcessingConfigurer.class);
@@ -415,6 +417,13 @@ public class SpringAxonAutoConfigurer implements ImportBeanDefinitionRegistrar, 
                     String cacheBeanName = aggregateAnnotation.cache();
                     if (nonEmptyBeanName(cacheBeanName)) {
                         aggregateConfigurer.configureCache(c -> beanFactory.getBean(cacheBeanName, Cache.class));
+                    }
+
+                    String lockFactoryBeanName = aggregateAnnotation.lockFactory();
+                    if (nonEmptyBeanName(lockFactoryBeanName)) {
+                        aggregateConfigurer.configureLockFactory(
+                                c -> beanFactory.getBean(lockFactoryBeanName, LockFactory.class)
+                        );
                     }
 
                     if (AnnotationUtils.isAnnotationPresent(aggregateType, "javax.persistence.Entity")) {

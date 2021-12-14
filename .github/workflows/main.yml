@@ -3,67 +3,58 @@ name: Axon Framework
 on:
   push:
     branches:
+      - main
       - master
       - axon-*.*.x
-  pull_request:
 
 jobs:
   build:
     name: Test and Build on JDK ${{ matrix.java-version }}
-
     runs-on: ubuntu-latest
-    continue-on-error: true # do not fail the whole job if one of the steps fails
-
     strategy:
       matrix:
         include:
           - java-version: 8
             sonar-enabled: false
-            deploy: true
           - java-version: 11
             sonar-enabled: true
-            deploy: false
-          - java-version: 17
-            sonar-enabled: false
-            deploy: false
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
       - name: Set up JDK ${{ matrix.java-version }}
-        uses: actions/setup-java@v2.2.0
+        uses: actions/setup-java@v2.4.0
         with:
           distribution: 'zulu'
-          cache: 'maven'
           java-version: ${{ matrix.java-version }}
           server-id: sonatype
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
 
-      - name: Maven operation with Sonar
+      - name: Cache .m2
+        uses: actions/cache@v2.1.7
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven
+
+      - name: Regular Build
+        run: |
+          ./mvnw -B -U clean verify
+
+      - name: Sonar Analysis
         if: matrix.sonar-enabled
         run: |
-          mvn -B -U -Possrh -Pcoverage \
-          clean verify \
-          sonar:sonar \
+          ./mvnw -B -Pcoverage sonar:sonar \
           -Dsonar.projectKey=AxonFramework_AxonFramework \
           -Dsonar.organization=axonframework \
           -Dsonar.host.url=https://sonarcloud.io \
           -Dsonar.login=${{ secrets.SONAR_TOKEN }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Maven operation without Sonar
-        if: matrix.sonar-enabled != true
-        run: |
-          mvn -B -U -Possrh clean verify
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Deploy to Sonatype
-        # The github.repository validation ensures this job is not invoked for forked branches, since those don't have access to the secrets.
-        if: ${{ success() && github.event.pull_request.head.repo.full_name == github.repository }}
+        if: success()
         run: |
           ./mvnw -B -U -Possrh deploy -DskipTests=true
         env:
@@ -72,8 +63,7 @@ jobs:
           MAVEN_PASSWORD: ${{ secrets.SONATYPE_TOKEN_PASS }}
 
       - name: Notify success to Slack
-        # The github.repository validation ensures this job is not invoked for forked branches, since those don't have access to the secrets.
-        if:  ${{ success() && github.event.pull_request.head.repo.full_name == github.repository }}
+        if: success()
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
         uses: voxmedia/github-action-slack-notify-build@v1.1.2
@@ -83,8 +73,7 @@ jobs:
           color: good
 
       - name: Notify failure to Slack
-        # The github.repository validation ensures this job is not invoked for forked branches, since those don't have access to the secrets.
-        if: ${{ failure() && github.event.pull_request.head.repo.full_name == github.repository }}
+        if: failure()
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
         uses: voxmedia/github-action-slack-notify-build@v1.1.2
