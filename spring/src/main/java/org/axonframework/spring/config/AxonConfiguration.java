@@ -37,6 +37,7 @@ import org.axonframework.queryhandling.QueryGateway;
 import org.axonframework.queryhandling.QueryUpdateEmitter;
 import org.axonframework.serialization.Serializer;
 import org.axonframework.serialization.upcasting.event.EventUpcasterChain;
+import org.axonframework.spring.lifecycle.AxonLifecycleStartEvent;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.ApplicationContext;
@@ -57,6 +58,7 @@ public class AxonConfiguration implements Configuration, InitializingBean, Appli
     private final Configurer configurer;
     private Configuration config;
     private volatile boolean running = false;
+    private ApplicationContext applicationContext;
 
     /**
      * Initializes a new {@link AxonConfiguration} that uses the given {@code configurer} to build the configuration.
@@ -187,6 +189,7 @@ public class AxonConfiguration implements Configuration, InitializingBean, Appli
     @Override
     public void onStart(int phase, LifecycleHandler startHandler) {
         config.onStart(phase, startHandler);
+        applicationContext.publishEvent(AxonLifecycleStartEvent.createStartEventsForPhase(phase));
     }
 
     @Override
@@ -241,6 +244,7 @@ public class AxonConfiguration implements Configuration, InitializingBean, Appli
     @Override
     public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
         configurer.registerComponent(ApplicationContext.class, c -> applicationContext);
+        this.applicationContext = applicationContext;
     }
 }
 
