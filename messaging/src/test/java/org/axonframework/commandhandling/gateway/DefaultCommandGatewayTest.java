@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -42,6 +42,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.axonframework.commandhandling.GenericCommandResultMessage.asCommandResultMessage;
@@ -391,6 +392,41 @@ class DefaultCommandGatewayTest {
 
         assertEquals(expectedPayload, result.getPayload());
         assertEquals(expectedMetaData, result.getMetaData());
+    }
+
+    @Test
+    void testCommandCallbackIsCustomized() {
+        AtomicBoolean customizedCallbackIsCalled = new AtomicBoolean();
+
+        testSubject = DefaultCommandGateway.builder()
+                                           .commandBus(mockCommandBus)
+                                           .retryScheduler(mockRetryScheduler)
+                                           .dispatchInterceptors(mockCommandMessageTransformer)
+                                            .commandCallbackCustomizer((commandMessage, commandResultMessage) -> customizedCallbackIsCalled.set(true))
+                                           .build();
+
+        //noinspection unchecked
+        doAnswer(invocation -> {
+            //noinspection unchecked
+            ((CommandCallback<Object, Object>) invocation.getArguments()[1]).onResult(
+                    (CommandMessage<Object>) invocation.getArguments()[0],
+                    asCommandResultMessage("returnValue")
+            );
+            return null;
+        }).when(mockCommandBus).dispatch(isA(CommandMessage.class), isA(CommandCallback.class));
+
+        String expectedPayload = "command";
+        testSubject.send(expectedPayload, MetaData.emptyInstance());
+
+        //noinspection unchecked
+        ArgumentCaptor<CommandMessage<?>> messageCaptor = ArgumentCaptor.forClass(CommandMessage.class);
+
+        //noinspection unchecked
+        verify(mockCommandBus).dispatch(messageCaptor.capture(), isA(CommandCallback.class));
+        CommandMessage<?> result = messageCaptor.getValue();
+
+        assertEquals(expectedPayload, result.getPayload());
+        assertTrue(customizedCallbackIsCalled.get());
     }
 
     private static class RescheduleCommand implements Answer<Boolean> {

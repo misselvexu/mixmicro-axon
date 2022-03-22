@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2010-2018. Axon Framework
+ * Copyright (c) 2010-2022. Axon Framework
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,7 +20,6 @@ import org.axonframework.commandhandling.CommandCallback;
 import org.axonframework.commandhandling.CommandMessage;
 import org.axonframework.commandhandling.CommandResultMessage;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * A {@link CommandCallback} implementation wrapping another, that concisely logs failed commands. Since the full
@@ -30,19 +29,7 @@ import org.slf4j.LoggerFactory;
  * @param <R> The return value of the command handler
  */
 public class FailureLoggingCallback<C, R> implements CommandCallback<C, R> {
-
-    private final CommandCallback<C, R> delegate;
     private final Logger logger;
-
-    /**
-     * Initialize the callback to delegate calls to the given {@code delegate}, logging failures on a logger
-     * for this class (on warn level).
-     *
-     * @param delegate The command callback to forward invocations to
-     */
-    public FailureLoggingCallback(CommandCallback<C, R> delegate) {
-        this(LoggerFactory.getLogger(FailureLoggingCallback.class), delegate);
-    }
 
     /**
      * Initialize the callback to delegate calls to the given {@code delegate}, logging failures on the given
@@ -51,9 +38,8 @@ public class FailureLoggingCallback<C, R> implements CommandCallback<C, R> {
      * @param logger   The logger to log exceptions on
      * @param delegate The command callback to forward invocations to
      */
-    public FailureLoggingCallback(Logger logger, CommandCallback<C, R> delegate) {
+    public FailureLoggingCallback(Logger logger) {
         this.logger = logger;
-        this.delegate = delegate;
     }
 
     @Override
@@ -65,6 +51,5 @@ public class FailureLoggingCallback<C, R> implements CommandCallback<C, R> {
                                                            commandMessage.getCommandName(),
                                                            cause.getClass().getName(),
                                                            cause.getMessage()));
-        delegate.onResult(commandMessage, commandResultMessage);
     }
 }
