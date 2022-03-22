@@ -32,11 +32,9 @@ public class FailureLoggingCallback<C, R> implements CommandCallback<C, R> {
     private final Logger logger;
 
     /**
-     * Initialize the callback to delegate calls to the given {@code delegate}, logging failures on the given
-     * {@code logger} (on warn level).
+     * Initialize the callback to log failures on the given {@code logger} (on warn level).
      *
-     * @param logger   The logger to log exceptions on
-     * @param delegate The command callback to forward invocations to
+     * @param logger The logger to log exceptions on
      */
     public FailureLoggingCallback(Logger logger) {
         this.logger = logger;
